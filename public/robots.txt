@@ -12,3 +12,5 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+Sitemap: https://soglom-mahalla-zvjvzopyrid.qoder.website/sitemap.xml

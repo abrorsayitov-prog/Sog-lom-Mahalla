@@ -26,10 +26,7 @@ export type Patient = {
   createdAt: string;
 };
 export type Session =
-  | { role: "admin" }
-  | { role: "doctor"; id: string }
-  | { role: "patient"; id: string }
-  | null;
+  { role: "admin" } | { role: "doctor"; id: string } | { role: "patient"; id: string } | null;
 
 type State = { doctors: Doctor[]; patients: Patient[]; session: Session };
 
@@ -51,7 +48,7 @@ function load() {
 }
 function set(next: Partial<State>) {
   state = { ...state, ...next };
-  localStorage.setItem(KEY, JSON.stringify(state));
+  if (typeof window !== "undefined") localStorage.setItem(KEY, JSON.stringify(state));
   listeners.forEach((l) => l());
 }
 if (typeof window !== "undefined") {
@@ -175,4 +172,8 @@ export function progress(p: Patient) {
   return { total: p.tasks.length, done: done.length, missed, doneIds: done };
 }
 
-export const severityLabel: Record<Severity, string> = { yengil: "Yengil", orta: "O‘rta", ogir: "Og‘ir" };
+export const severityLabel: Record<Severity, string> = {
+  yengil: "Yengil",
+  orta: "O‘rta",
+  ogir: "Og‘ir",
+};
