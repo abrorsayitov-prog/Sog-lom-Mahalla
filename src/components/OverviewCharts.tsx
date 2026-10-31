@@ -1,12 +1,22 @@
 import { useStore } from "@/lib/store";
 
-export function OverviewCharts({ compact = false }: { compact?: boolean }) {
+type ChartStats = { total: number; ogir: number; orta: number; yengil: number };
+
+export function OverviewCharts({
+  compact = false,
+  stats: sample,
+  axisMax = 400,
+}: {
+  compact?: boolean;
+  stats?: ChartStats;
+  axisMax?: number;
+}) {
   const { patients } = useStore();
   const count = (s: "ogir" | "orta" | "yengil") => patients.filter((p) => p.severity === s).length;
   // The compact variant only appears inside the landing-page mockups, whose stat
   // cards are fixed illustrations — the real panels must show real numbers.
   const stats = compact
-    ? { total: 2480, ogir: 320, orta: 980, yengil: 1180 }
+    ? (sample ?? { total: 0, ogir: 0, orta: 0, yengil: 0 })
     : { total: patients.length, ogir: count("ogir"), orta: count("orta"), yengil: count("yengil") };
   const { total, ogir, orta, yengil } = stats;
   const slice = (n: number) => (n / (total || 1)) * 100;
@@ -44,11 +54,14 @@ export function OverviewCharts({ compact = false }: { compact?: boolean }) {
             <line key={y} x1="26" x2="290" y1={y} y2={y} className="chart-grid" />
           ))}
           {compact &&
-            [400, 300, 200, 100, 0].map((v, i) => (
-              <text key={v} x="22" y={20 + i * 25 + 3} className="chart-axis" textAnchor="end">
-                {v}
-              </text>
-            ))}
+            [0, 1, 2, 3, 4].map((i) => {
+              const v = axisMax - (axisMax / 4) * i;
+              return (
+                <text key={i} x="22" y={20 + i * 25 + 3} className="chart-axis" textAnchor="end">
+                  {v}
+                </text>
+              );
+            })}
           {[26, 70, 114, 158, 202, 246, 290].map((x) => (
             <line key={x} x1={x} x2={x} y1="15" y2="120" className="chart-grid" />
           ))}

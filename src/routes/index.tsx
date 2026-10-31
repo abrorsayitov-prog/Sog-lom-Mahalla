@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ShieldCheck, Stethoscope, User, X } from "lucide-react";
 import { Logo } from "@/components/Shell";
 import { actions, useStore } from "@/lib/store";
-import { ConceptDashboard } from "@/components/ConceptDashboard";
+import { ConceptPage } from "@/components/concept/ConceptPage";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
@@ -76,7 +76,7 @@ function Login() {
 
   return (
     <>
-      <ConceptDashboard
+      <ConceptPage
         onLogin={(role) => {
           setTab(role);
           setMsg(null);
