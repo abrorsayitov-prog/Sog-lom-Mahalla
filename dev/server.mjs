@@ -30,7 +30,7 @@ const MIME = {
   '.xml': 'application/xml',
 };
 
-const db = createFakeDb();
+const db = createFakeDb(resolve(import.meta.dirname, '.local-db.json'));
 const env = (name) => (name === 'APP_ORIGIN' ? LOCAL_ORIGIN : process.env[name] ?? null);
 const handle = application({ db, env, origin: () => LOCAL_ORIGIN });
 

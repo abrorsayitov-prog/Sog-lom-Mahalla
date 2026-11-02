@@ -572,7 +572,7 @@ function PatientDetail({
                 {
                   patientId: patient.id,
                   time: "09:00",
-                  title: "",
+                  title: t("task.dori"),
                   note: "",
                   type: "dori",
                   remind: true,
@@ -591,7 +591,7 @@ function PatientDetail({
                 {
                   patientId: patient.id,
                   time: "13:00",
-                  title: "",
+                  title: t("task.ovqat"),
                   note: "",
                   type: "ovqat",
                   remind: true,

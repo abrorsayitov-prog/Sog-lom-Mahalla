@@ -1,6 +1,10 @@
-// LOCAL TEST FAKE DATABASE. Hech qachon functions/ katalogiga kirmaydi va hech
-// qanday hisob ma'lumotini saqlamaydi: Supabase client'ining bir qismini
-// xotirada taqlid qiladi, shunda routes.mjs haqiqiy marshrutlari tekshiriladi.
+// LOCAL TEST FAKE DATABASE. Hech qachon functions/ katalogiga kirmaydi:
+// Supabase client'ining bir qismini taqlid qiladi, shunda routes.mjs haqiqiy
+// marshrutlari tekshiriladi. `persistPath` berilsa, yozuvlar shu faylga
+// saqlanadi — lokal sinov ma'lumotlari server qayta ishga tushganda ham
+// qoladi (fayl .gitignore'da, chop etilmaydi).
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const UNIQUE = {
   admins: [['login']],
@@ -99,6 +103,7 @@ class Query {
         }
       }
       table.push(row);
+      this.db.save();
       return { data: [this.project(row)], error: null, count: 1 };
     }
 
@@ -109,6 +114,7 @@ class Query {
         Object.assign(row, clone(this.payload));
         changed.push(row);
       }
+      if (changed.length > 0) this.db.save();
       return this.finish(changed);
     }
 
@@ -116,6 +122,7 @@ class Query {
     const removed = [];
     for (const row of table) (this.matches(row) ? removed : kept).push(row);
     this.db.tables[this.table] = kept;
+    if (removed.length > 0) this.db.save();
     return this.finish(removed);
   }
 
@@ -135,8 +142,16 @@ class Query {
   attempts = 0;
 }
 
-export function createFakeDb() {
-  const db = { tables: {}, log: [] };
+export function createFakeDb(persistPath = null) {
+  const tables = persistPath && existsSync(persistPath)
+    ? JSON.parse(readFileSync(persistPath, 'utf8'))
+    : {};
+  const db = { tables, log: [] };
+  db.save = () => {
+    if (!persistPath) return;
+    mkdirSync(dirname(persistPath), { recursive: true });
+    writeFileSync(persistPath, JSON.stringify(tables), { mode: 0o600 });
+  };
   db.from = (table) => {
     db.log.push(table);
     return new Query(db, table);
