@@ -1,321 +1,600 @@
-import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
 import {
   Activity,
-  AlertTriangle,
+  AlarmClock,
   Check,
-  Home,
+  Pencil,
+  Phone,
+  ShieldAlert,
   Stethoscope,
   Trash2,
   UserPlus,
   Users,
-  X,
 } from "lucide-react";
-import { Empty, PageTitle, Pill, Shell, Stat, useGuard } from "@/components/Shell";
-import { actions, progress, severityLabel, useStore, type DoctorStatus } from "@/lib/store";
-import { OverviewCharts } from "@/components/OverviewCharts";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { AuthScreen } from "@/components/AuthScreen";
+import { Field, WrongRoleNotice } from "@/components/auth";
+import {
+  Empty,
+  ErrorCard,
+  type NavItem,
+  PageTitle,
+  Pill,
+  Shell,
+  Splash,
+  Stat,
+} from "@/components/Shell";
+import { errorMessage, useI18n, type TKey } from "@/lib/i18n";
+import { DoctorNetwork, HeroChip, PulseMark } from "@/components/Hero";
+import {
+  useAdminAlerts,
+  useAdminDoctors,
+  useAdminPatients,
+  useAdminStats,
+  useCreateDoctor,
+  useDeleteDoctor,
+  useDeletePatientByAdmin,
+  usePatchDoctor,
+} from "@/lib/queries";
+import { useRequireRole } from "@/lib/session";
+import type { Doctor, DoctorInput, DoctorPatch } from "@/lib/api";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
       { title: "Admin paneli — Sog‘lom Mahalla" },
       { name: "description", content: "Shifokorlar, bemorlar va platforma holatini boshqarish." },
-      { property: "og:title", content: "Admin paneli — Sog‘lom Mahalla" },
-      { property: "og:description", content: "Platformani to‘liq boshqarish paneli." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
       { name: "robots", content: "noindex,nofollow" },
     ],
   }),
-  component: Admin,
+  component: AdminPage,
 });
 
-const statusPill: Record<DoctorStatus, { tone: "success" | "warning" | "danger"; label: string }> =
-  {
-    approved: { tone: "success", label: "Faol" },
-    pending: { tone: "warning", label: "Kutilmoqda" },
-    rejected: { tone: "danger", label: "Rad etilgan" },
-  };
+const VIEWS = ["home", "doctors", "patients", "alerts"] as const;
+type View = (typeof VIEWS)[number];
 
-function Admin() {
-  const { doctors, patients } = useStore();
-  const [tab, setTab] = useState("home");
-  const session = useGuard("admin");
-  if (!session) return null;
+const NAV_ICON = { home: Activity, doctors: Stethoscope, patients: Users, alerts: AlarmClock };
 
-  const pending = doctors.filter((d) => d.status === "pending");
-  const alerts = patients.filter((p) => progress(p).missed.length > 0);
-  const docName = (id: string) => {
-    const d = doctors.find((x) => x.id === id);
-    return d ? `${d.firstName} ${d.lastName}` : "—";
-  };
+function AdminPage() {
+  const guard = useRequireRole("admin");
+  if (!guard.ready) return <Splash />;
+  if (guard.error) return <ErrorCard error={guard.error} onRetry={() => void guard.refetch()} />;
+  if (guard.wrongRole) return <WrongRoleNotice signedInAs={guard.wrongRole} />;
+  if (!guard.me) return <AuthScreen role="admin" />;
+  return <AdminPanel />;
+}
+
+function AdminPanel() {
+  const { t } = useI18n();
+  const [view, setView] = useState<View>("home");
+  const stats = useAdminStats();
+
+  const nav: NavItem[] = VIEWS.map((key) => ({
+    key,
+    label: t(`nav.${key}` as TKey),
+    icon: NAV_ICON[key],
+    badge:
+      key === "doctors"
+        ? (stats.data?.pending ?? 0)
+        : key === "alerts"
+          ? (stats.data?.alerts ?? 0)
+          : 0,
+  }));
 
   return (
-    <Shell
-      user="Admin"
-      role="Administrator"
-      active={tab}
-      onNav={setTab}
-      nav={[
-        { key: "home", label: "Bosh sahifa", icon: Home },
-        { key: "requests", label: "So‘rovlar", icon: UserPlus, badge: pending.length },
-        { key: "doctors", label: "Shifokorlar", icon: Stethoscope },
-        { key: "patients", label: "Bemorlar", icon: Users },
-      ]}
-    >
-      {tab === "home" && (
-        <>
-          <PageTitle title="Boshqaruv paneli" sub="Tizim holati va umumiy ma’lumotlar" />
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat icon={Users} label="Bemorlar" value={patients.length} />
-            <Stat
-              icon={Stethoscope}
-              label="Faol shifokorlar"
-              value={doctors.filter((d) => d.status === "approved").length}
-              tone="success"
-            />
-            <Stat icon={UserPlus} label="Yangi so‘rovlar" value={pending.length} tone="warning" />
-            <Stat
-              icon={AlertTriangle}
-              label="Ogohlantirishlar"
-              value={alerts.length}
-              tone="danger"
-            />
-          </div>
-          <OverviewCharts />
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <section className="card-soft p-5">
-              <h3 className="font-semibold">Kutilayotgan shifokorlar</h3>
-              <div className="mt-4 space-y-2">
-                {pending.length === 0 && <Empty>Yangi so‘rov yo‘q</Empty>}
-                {pending.slice(0, 5).map((d) => (
-                  <RequestRow key={d.id} d={d} />
-                ))}
-              </div>
-            </section>
-            <section className="card-soft p-5">
-              <h3 className="flex items-center gap-2 font-semibold">
-                <Activity className="h-4 w-4 text-destructive" /> Vazifani o‘tkazib yuborganlar
-              </h3>
-              <div className="mt-4 space-y-2">
-                {alerts.length === 0 && <Empty>Hamma bemorlar o‘z vaqtida</Empty>}
-                {alerts.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between rounded-xl bg-danger-soft p-3 text-sm"
-                  >
-                    <div>
-                      <div className="font-semibold">
-                        {p.firstName} {p.lastName}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {p.phone} · Dr. {docName(p.doctorId)}
-                      </div>
-                    </div>
-                    <Pill tone="danger">{progress(p).missed.length} ta</Pill>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        </>
-      )}
-
-      {tab === "requests" && (
-        <>
-          <PageTitle
-            title="Shifokor so‘rovlari"
-            sub="Login orqali kirgan shifokorlarni tasdiqlang"
-          />
-          <div className="space-y-2">
-            {pending.length === 0 && <Empty>Yangi so‘rov yo‘q</Empty>}
-            {pending.map((d) => (
-              <RequestRow key={d.id} d={d} />
-            ))}
-          </div>
-        </>
-      )}
-
-      {tab === "doctors" && (
-        <>
-          <PageTitle title="Shifokorlar" sub={`Jami: ${doctors.length}`} />
-          <div className="card-soft overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted text-left text-xs text-muted-foreground">
-                <tr>
-                  <th className="p-3">Ism Familiya</th>
-                  <th className="p-3">Telefon</th>
-                  <th className="p-3">Mutaxassislik</th>
-                  <th className="p-3">Bemorlar</th>
-                  <th className="p-3">Holat</th>
-                  <th className="p-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {doctors.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="p-6 text-center text-muted-foreground">
-                      Shifokorlar yo‘q
-                    </td>
-                  </tr>
-                )}
-                {doctors.map((d) => (
-                  <tr key={d.id} className="border-t">
-                    <td className="p-3 font-medium">
-                      {d.firstName} {d.lastName}
-                    </td>
-                    <td className="p-3">{d.phone}</td>
-                    <td className="p-3">
-                      <input
-                        className="field h-9"
-                        aria-label={`${d.firstName} ${d.lastName} — mutaxassislik`}
-                        value={d.specialty}
-                        onChange={(e) => actions.updateDoctor(d.id, { specialty: e.target.value })}
-                      />
-                    </td>
-                    <td className="p-3">{patients.filter((p) => p.doctorId === d.id).length}</td>
-                    <td className="p-3">
-                      <Pill tone={statusPill[d.status].tone}>{statusPill[d.status].label}</Pill>
-                    </td>
-                    <td className="p-3">
-                      <div className="flex justify-end gap-1">
-                        {d.status !== "approved" && (
-                          <button
-                            className="btn btn-ghost h-8 px-2"
-                            title="Faollashtirish"
-                            onClick={() => actions.setDoctorStatus(d.id, "approved")}
-                          >
-                            <Check className="h-4 w-4" />
-                          </button>
-                        )}
-                        {d.status === "approved" && (
-                          <button
-                            className="btn btn-ghost h-8 px-2"
-                            title="Bloklash"
-                            onClick={() => actions.setDoctorStatus(d.id, "rejected")}
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="btn btn-ghost h-8 px-2 text-destructive"
-                          aria-label={`${d.firstName} ${d.lastName} shifokorni o‘chirish`}
-                          onClick={() => confirm("O‘chirilsinmi?") && actions.deleteDoctor(d.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {tab === "patients" && (
-        <>
-          <PageTitle title="Barcha bemorlar" sub={`Jami: ${patients.length}`} />
-          <div className="card-soft overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted text-left text-xs text-muted-foreground">
-                <tr>
-                  <th className="p-3">Bemor</th>
-                  <th className="p-3">Telefon</th>
-                  <th className="p-3">Tashxis</th>
-                  <th className="p-3">Shifokor</th>
-                  <th className="p-3">Bugun</th>
-                  <th className="p-3">Holat</th>
-                  <th className="p-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {patients.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="p-6 text-center text-muted-foreground">
-                      Bemorlar yo‘q
-                    </td>
-                  </tr>
-                )}
-                {patients.map((p) => {
-                  const pr = progress(p);
-                  return (
-                    <tr key={p.id} className="border-t">
-                      <td className="p-3 font-medium">
-                        {p.firstName} {p.lastName}
-                      </td>
-                      <td className="p-3">{p.phone}</td>
-                      <td className="p-3">{p.diagnosis}</td>
-                      <td className="p-3">{docName(p.doctorId)}</td>
-                      <td className="p-3">
-                        {pr.done}/{pr.total}
-                      </td>
-                      <td className="p-3">
-                        <Pill
-                          tone={
-                            p.severity === "ogir"
-                              ? "danger"
-                              : p.severity === "orta"
-                                ? "warning"
-                                : "success"
-                          }
-                        >
-                          {severityLabel[p.severity]}
-                        </Pill>
-                      </td>
-                      <td className="p-3 text-right">
-                        <button
-                          type="button"
-                          className="btn btn-ghost h-8 px-2 text-destructive"
-                          aria-label={`${p.firstName} ${p.lastName} bemorni o‘chirish`}
-                          onClick={() => confirm("O‘chirilsinmi?") && actions.deletePatient(p.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+    <Shell role="admin" nav={nav} active={view} onNav={(k) => setView(k as View)}>
+      {view === "home" && <AdminHome />}
+      {view === "doctors" && <AdminDoctors />}
+      {view === "patients" && <AdminPatients />}
+      {view === "alerts" && <AdminAlerts />}
     </Shell>
   );
 }
 
-function RequestRow({
-  d,
-}: {
-  d: { id: string; firstName: string; lastName: string; phone: string; createdAt: string };
-}) {
+function AdminHome() {
+  const { t } = useI18n();
+  const stats = useAdminStats();
+  const doctors = useAdminDoctors();
+  const patients = useAdminPatients();
+  const alerts = useAdminAlerts();
+  const patch = usePatchDoctor();
+
+  const allDoctors = doctors.data ?? [];
+  const allPatients = patients.data ?? [];
+  const pending = allDoctors.filter((d) => d.status === "pending");
+  const alertDoctorIds = (alerts.data ?? []).map((row) => row.patient.doctorId);
+
+  const act = (doctor: Doctor, status: Doctor["status"]) =>
+    patch.mutate(
+      { id: doctor.id, status },
+      {
+        onSuccess: () => toast.success(t("c.saved")),
+        onError: (error) => toast.error(errorMessage(t, error)),
+      },
+    );
+
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
-      <div>
-        <div className="font-semibold">
-          {d.firstName} {d.lastName}
+    <>
+      <section className="hero-night px-6 py-7 md:px-10 md:py-9">
+        <div className="relative flex flex-wrap items-center gap-6">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <PulseMark className="h-8 w-24" />
+              <span className="font-script text-3xl leading-none text-primary-foreground/80">
+                {t("app.name")}
+              </span>
+            </div>
+            <h1 className="font-display text-5d-light mt-3 text-4xl font-extrabold leading-tight md:text-5xl">
+              {t("admin.title")}
+            </h1>
+            <p className="mt-3 text-xl font-semibold text-[#c3caff]">{t("admin.heroAccent")}</p>
+            <p className="mt-1 text-lg text-primary-foreground/70">{t("admin.sub")}</p>
+          </div>
+          <DoctorNetwork
+            doctors={allDoctors}
+            patients={allPatients}
+            alertDoctorIds={alertDoctorIds}
+            className="h-48 w-full max-w-[27rem] shrink-0"
+          />
         </div>
-        <div className="text-xs text-muted-foreground">
-          {d.phone} · {new Date(d.createdAt).toLocaleString("uz-UZ")}
+
+        <div className="relative mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <HeroChip
+            icon={Users}
+            label={t("admin.stat.patients")}
+            value={stats.data?.patients ?? "—"}
+          />
+          <HeroChip
+            icon={Stethoscope}
+            label={t("admin.stat.activeDoctors")}
+            value={stats.data?.doctors ?? "—"}
+          />
+          <HeroChip
+            icon={UserPlus}
+            label={t("admin.stat.pending")}
+            value={stats.data?.pending ?? "—"}
+          />
+          <HeroChip
+            icon={AlarmClock}
+            label={t("admin.stat.alerts")}
+            value={stats.data?.alerts ?? "—"}
+          />
+          <HeroChip
+            icon={Activity}
+            label={t("admin.stat.severe")}
+            value={stats.data?.severe ?? "—"}
+          />
+          <HeroChip
+            icon={Check}
+            label={t("admin.stat.completed")}
+            value={stats.data?.completedToday ?? "—"}
+          />
         </div>
+      </section>
+
+      <h2 className="font-display mt-10 text-3xl font-extrabold">{t("admin.pendingTitle")}</h2>
+      <div className="mt-4 space-y-3">
+        {pending.length === 0 && <Empty>{t("admin.pendingEmpty")}</Empty>}
+        {pending.map((doctor) => (
+          <div key={doctor.id} className="card-5d flex flex-wrap items-center gap-3 p-4">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-brand text-lg font-bold text-primary-foreground">
+              {doctor.firstName.charAt(0)}
+              {doctor.lastName.charAt(0)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xl font-bold">
+                {doctor.firstName} {doctor.lastName}
+              </div>
+              <div className="mt-0.5 text-base text-muted-foreground">
+                {doctor.specialty || "—"} · {doctor.phone}
+              </div>
+            </div>
+            <Button
+              className="h-12 px-5 text-base"
+              disabled={patch.isPending}
+              onClick={() => act(doctor, "approved")}
+            >
+              <Check className="mr-2 h-5 w-5" /> {t("admin.approve")}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-12 px-5 text-base"
+              disabled={patch.isPending}
+              onClick={() => act(doctor, "rejected")}
+            >
+              <ShieldAlert className="mr-2 h-5 w-5" /> {t("admin.reject")}
+            </Button>
+          </div>
+        ))}
       </div>
-      <div className="flex gap-2">
-        <button
-          className="btn btn-primary h-9"
-          onClick={() => actions.setDoctorStatus(d.id, "approved")}
-        >
-          <Check className="h-4 w-4" /> Tasdiqlash
-        </button>
-        <button
-          className="btn btn-ghost h-9"
-          onClick={() => actions.setDoctorStatus(d.id, "rejected")}
-        >
-          <X className="h-4 w-4" /> Rad etish
-        </button>
+    </>
+  );
+}
+
+const emptyDoctor: DoctorInput = {
+  firstName: "",
+  lastName: "",
+  phone: "",
+  specialty: "",
+  password: "",
+};
+
+function DoctorForm({
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+  pending,
+  error,
+}: {
+  initial: DoctorInput;
+  submitLabel: string;
+  onSubmit: (value: DoctorInput) => void;
+  onCancel: () => void;
+  pending: boolean;
+  error: unknown;
+}) {
+  const { t } = useI18n();
+  const [value, setValue] = useState<DoctorInput>(initial);
+  const set = (key: keyof DoctorInput) => (v: string) =>
+    setValue((prev) => ({ ...prev, [key]: v }));
+
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit(value);
+      }}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t("c.firstName")} value={value.firstName} onChange={set("firstName")} />
+        <Field label={t("c.lastName")} value={value.lastName} onChange={set("lastName")} />
       </div>
-    </div>
+      <Field
+        label={t("c.phone")}
+        value={value.phone}
+        onChange={set("phone")}
+        inputMode="tel"
+        maxLength={24}
+      />
+      <Field label={t("c.specialty")} value={value.specialty ?? ""} onChange={set("specialty")} />
+      <Field
+        label={t("c.password")}
+        type="password"
+        value={value.password}
+        onChange={set("password")}
+        autoComplete="new-password"
+        maxLength={72}
+      />
+      {!!error && (
+        <div
+          role="alert"
+          className="rounded-xl bg-danger-soft p-3 text-base font-semibold text-destructive"
+        >
+          {errorMessage(t, error)}
+        </div>
+      )}
+      <div className="flex gap-3">
+        <Button type="submit" className="h-12 flex-1 text-base" disabled={pending}>
+          {pending ? t("c.saving") : submitLabel}
+        </Button>
+        <Button type="button" variant="outline" className="h-12 px-5 text-base" onClick={onCancel}>
+          {t("c.cancel")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function AdminDoctors() {
+  const { t } = useI18n();
+  const doctors = useAdminDoctors();
+  const create = useCreateDoctor();
+  const patch = usePatchDoctor();
+  const remove = useDeleteDoctor();
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<Doctor | null>(null);
+
+  const fail = (error: unknown) => toast.error(errorMessage(t, error));
+  const setStatus = (doctor: Doctor, status: Doctor["status"]) =>
+    patch.mutate(
+      { id: doctor.id, status },
+      {
+        onSuccess: () => toast.success(t("c.saved")),
+        onError: fail,
+      },
+    );
+
+  return (
+    <>
+      <PageTitle
+        title={t("admin.doctorsTitle")}
+        sub={t("admin.doctorsSub")}
+        right={
+          <Button className="h-12 px-5 text-base" onClick={() => setAddOpen(true)}>
+            <UserPlus className="mr-2 h-5 w-5" /> {t("admin.newDoctor")}
+          </Button>
+        }
+      />
+      {(doctors.data?.length ?? 0) === 0 && !doctors.isPending ? (
+        <Empty>{t("admin.noDoctors")}</Empty>
+      ) : (
+        <div className="space-y-3">
+          {(doctors.data ?? []).map((doctor) => (
+            <div key={doctor.id} className="card-soft flex flex-wrap items-center gap-3 p-4">
+              <div className="min-w-0 flex-1">
+                <div className="text-xl font-bold">
+                  {doctor.firstName} {doctor.lastName}
+                </div>
+                <div className="mt-0.5 text-base text-muted-foreground">
+                  {doctor.specialty || "—"} · {doctor.phone}
+                </div>
+              </div>
+              <Pill
+                tone={
+                  doctor.status === "approved"
+                    ? "success"
+                    : doctor.status === "pending"
+                      ? "warning"
+                      : "danger"
+                }
+              >
+                {t(`status.${doctor.status}` as TKey)}
+              </Pill>
+              <div className="flex flex-wrap gap-2">
+                {doctor.status !== "approved" && (
+                  <Button
+                    size="sm"
+                    className="h-11 px-4 text-base"
+                    onClick={() => setStatus(doctor, "approved")}
+                  >
+                    <Check className="mr-1.5 h-4 w-4" /> {t("admin.approve")}
+                  </Button>
+                )}
+                {doctor.status === "approved" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-11 px-4 text-base"
+                    onClick={() => setStatus(doctor, "rejected")}
+                  >
+                    <ShieldAlert className="mr-1.5 h-4 w-4" /> {t("admin.block")}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-11 px-3"
+                  onClick={() => setEditing(doctor)}
+                >
+                  <Pencil className="h-5 w-5" />
+                  <span className="ml-1.5">{t("c.edit")}</span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-11 px-3 text-destructive"
+                  onClick={() => {
+                    if (!window.confirm(t("c.confirmDelete"))) return;
+                    remove.mutate(doctor.id, {
+                      onSuccess: () => toast.success(t("c.saved")),
+                      onError: fail,
+                    });
+                  }}
+                >
+                  <Trash2 className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">{t("admin.newDoctor")}</DialogTitle>
+            <DialogDescription className="sr-only">{t("admin.doctorsSub")}</DialogDescription>
+          </DialogHeader>
+          <DoctorForm
+            initial={emptyDoctor}
+            submitLabel={t("c.add")}
+            pending={create.isPending}
+            error={create.isError ? create.error : null}
+            onCancel={() => setAddOpen(false)}
+            onSubmit={(value) =>
+              create.mutate(value, {
+                onSuccess: () => {
+                  setAddOpen(false);
+                  toast.success(t("c.saved"));
+                },
+              })
+            }
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!editing}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">{t("admin.editDoctor")}</DialogTitle>
+            <DialogDescription className="sr-only">{t("admin.doctorsSub")}</DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <DoctorForm
+              key={editing.id}
+              initial={{
+                firstName: editing.firstName,
+                lastName: editing.lastName,
+                phone: editing.phone,
+                specialty: editing.specialty,
+                password: "",
+              }}
+              submitLabel={t("c.save")}
+              pending={patch.isPending}
+              error={patch.isError ? patch.error : null}
+              onCancel={() => setEditing(null)}
+              onSubmit={(value) => {
+                const next: DoctorPatch = { ...value };
+                if (!next.password) delete next.password;
+                patch.mutate(
+                  { id: editing.id, ...next },
+                  {
+                    onSuccess: () => {
+                      setEditing(null);
+                      toast.success(t("c.saved"));
+                    },
+                  },
+                );
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function AdminPatients() {
+  const { t } = useI18n();
+  const patients = useAdminPatients();
+  const remove = useDeletePatientByAdmin();
+  const [query, setQuery] = useState("");
+
+  const all = patients.data ?? [];
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? all.filter((p) =>
+        `${p.firstName} ${p.lastName} ${p.phone} ${p.diagnosis} ${p.doctorName ?? ""}`
+          .toLowerCase()
+          .includes(needle),
+      )
+    : all;
+
+  return (
+    <>
+      <PageTitle title={t("admin.patientsTitle")} sub={t("admin.patientsSub")} />
+      <input
+        className="field mb-5 text-base"
+        placeholder={t("c.search")}
+        aria-label={t("c.search")}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {shown.length === 0 ? (
+        <Empty>{all.length === 0 ? t("admin.noPatients") : t("c.empty")}</Empty>
+      ) : (
+        <div className="space-y-3">
+          {shown.map((patient) => (
+            <div key={patient.id} className="card-soft flex flex-wrap items-center gap-3 p-4">
+              <div className="min-w-0 flex-1">
+                <div className="text-xl font-bold">
+                  {patient.firstName} {patient.lastName}
+                </div>
+                <div className="mt-0.5 text-base text-muted-foreground">
+                  {patient.diagnosis || "—"} · {t("c.col.doctor")}: {patient.doctorName || "—"}
+                </div>
+              </div>
+              <Pill
+                tone={
+                  patient.severity === "ogir"
+                    ? "danger"
+                    : patient.severity === "orta"
+                      ? "warning"
+                      : "success"
+                }
+              >
+                {t(`sev.${patient.severity}` as TKey)}
+              </Pill>
+              {patient.dietNumber != null && (
+                <Pill tone="muted">{t("diet.number", { n: patient.dietNumber })}</Pill>
+              )}
+              <a
+                href={`tel:${patient.phone}`}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-secondary px-4 text-base font-semibold text-secondary-foreground"
+              >
+                <Phone className="h-4 w-4" /> {patient.phone}
+              </a>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-11 px-3 text-destructive"
+                onClick={() => {
+                  if (!window.confirm(t("c.confirmDelete"))) return;
+                  remove.mutate(patient.id, {
+                    onSuccess: () => toast.success(t("c.saved")),
+                    onError: (error) => toast.error(errorMessage(t, error)),
+                  });
+                }}
+              >
+                <Trash2 className="h-5 w-5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function AdminAlerts() {
+  const { t } = useI18n();
+  const alerts = useAdminAlerts();
+  const list = alerts.data ?? [];
+
+  return (
+    <>
+      <PageTitle title={t("admin.alertsTitle")} sub={t("doctor.alertsSub")} />
+      {list.length === 0 ? (
+        <Empty>{t("admin.alertsEmpty")}</Empty>
+      ) : (
+        <div className="space-y-3">
+          {list.map((row) => (
+            <div key={row.patient.id} className="card-soft p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xl font-bold">
+                    {row.patient.firstName} {row.patient.lastName}
+                  </div>
+                  <div className="mt-0.5 text-base text-muted-foreground">
+                    {row.patient.doctorName || "—"} · {row.patient.phone}
+                  </div>
+                </div>
+                <Pill tone="danger">{t("c.of", { a: row.missed, b: row.total })}</Pill>
+                <a
+                  href={`tel:${row.patient.phone}`}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-secondary px-4 text-base font-semibold text-secondary-foreground"
+                >
+                  <Phone className="h-4 w-4" /> {t("c.call")}
+                </a>
+              </div>
+              <ul className="mt-3 space-y-1.5 text-lg">
+                {row.missedList.map((item, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="font-bold text-destructive">{item.time}</span>
+                    <span>{item.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

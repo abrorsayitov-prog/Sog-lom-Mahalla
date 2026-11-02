@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 
 import { routeTree } from "../src/routeTree.gen";
-import { QueryClient } from "@tanstack/react-query";
+import { createQueryClient } from "../src/lib/query-client";
 import { renderMode } from "../src/lib/render-mode";
 import "../src/styles.css";
 
@@ -30,7 +30,7 @@ function applyDocumentMeta(pathname: string) {
 }
 applyDocumentMeta(location.pathname);
 
-const queryClient = new QueryClient();
+const queryClient = createQueryClient();
 
 const router = createRouter({
   routeTree,

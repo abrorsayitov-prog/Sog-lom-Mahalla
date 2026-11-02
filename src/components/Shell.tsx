@@ -1,8 +1,14 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { LogOut, Bell, type LucideIcon } from "lucide-react";
+import { LogOut, type LucideIcon } from "lucide-react";
 import { useId, type ReactNode } from "react";
-import { actions } from "@/lib/store";
+import { AccountButton, displayName, ROLE_PATH } from "@/components/auth";
+import { LangSwitch } from "@/components/LangSwitch";
+import { errorMessage, useI18n } from "@/lib/i18n";
+import { useLogout, useMe } from "@/lib/session";
+import type { Role } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+
+export { Link };
 
 export function Logo({ light, size = "md" }: { light?: boolean; size?: "sm" | "md" | "lg" }) {
   const grad = `heart-${useId().replace(/:/g, "")}`;
@@ -30,7 +36,7 @@ export function Logo({ light, size = "md" }: { light?: boolean; size?: "sm" | "m
         />
       </svg>
       <span
-        className={`logo-name text-lg font-bold ${light ? "text-primary-foreground" : "text-foreground"}`}
+        className={`logo-name text-xl font-extrabold tracking-tight ${light ? "text-primary-foreground" : "text-foreground"}`}
       >
         Sog‘lom Mahalla
       </span>
@@ -40,56 +46,77 @@ export function Logo({ light, size = "md" }: { light?: boolean; size?: "sm" | "m
 
 export type NavItem = { key: string; label: string; icon: LucideIcon; badge?: number };
 
+/** Tepadagi panel: chapda logotip, o'ngda globus (til) va odamcha (kirish / profil). */
+export function TopBar({ role }: { role: Role }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b bg-card px-4 py-3 md:px-8">
+      <div className="md:hidden">
+        <Logo size="sm" />
+      </div>
+      <div className="hidden text-lg font-bold md:block">Sog‘lom Mahalla</div>
+      <div className="flex items-center gap-2">
+        <LangSwitch />
+        <AccountButton role={role} />
+      </div>
+    </div>
+  );
+}
+
 export function Shell({
-  user,
   role,
   nav,
   active,
   onNav,
   children,
 }: {
-  user: string;
-  role: string;
+  role: "admin" | "doctor";
   nav: NavItem[];
   active: string;
   onNav: (k: string) => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const navigate = useNavigate();
-  const logout = () => {
-    actions.logout();
-    navigate({ to: "/", replace: true });
-  };
+  const me = useMe();
+  const logout = useLogout();
+  const signOut = () =>
+    logout.mutate(undefined, {
+      onSuccess: () => navigate({ to: ROLE_PATH[role], replace: true }),
+    });
+
   return (
-    <div
-      className={`real-shell flex min-h-screen w-full ${role === "Administrator" ? "admin-shell" : "doctor-shell"}`}
-    >
-      <aside className="real-sidebar sticky top-0 hidden h-screen w-56 shrink-0 flex-col bg-nav p-5 text-nav-foreground md:flex">
+    <div className="flex min-h-screen w-full bg-background">
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-nav p-5 text-nav-foreground lg:flex">
         <Logo light />
-        <div className="mt-8 flex items-center gap-3 rounded-2xl bg-sidebar-accent p-3">
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-brand font-bold text-primary-foreground">
-            {user.charAt(0)}
+        {me.data && (
+          <div className="mt-6 flex items-center gap-3 rounded-2xl bg-sidebar-accent p-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand text-lg font-bold text-primary-foreground">
+              {displayName(me.data).charAt(0)}
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-base font-semibold text-primary-foreground">
+                {displayName(me.data)}
+              </div>
+              <div className="text-sm opacity-80">{t(`role.${role}`)}</div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-primary-foreground">{user}</div>
-            <div className="text-xs opacity-70">{role}</div>
-          </div>
-        </div>
-        <nav className="mt-6 flex flex-1 flex-col gap-1">
+        )}
+        <nav className="mt-6 flex flex-1 flex-col gap-1.5">
           {nav.map((n) => (
             <button
               key={n.key}
               onClick={() => onNav(n.key)}
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+              aria-current={active === n.key ? "page" : undefined}
+              className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-base font-semibold transition ${
                 active === n.key
                   ? "bg-nav-active text-primary-foreground"
                   : "hover:bg-sidebar-accent"
               }`}
             >
-              <n.icon className="h-4 w-4" />
+              <n.icon className="h-5 w-5" />
               <span className="flex-1 text-left">{n.label}</span>
               {!!n.badge && (
-                <span className="rounded-full bg-destructive px-2 text-xs text-destructive-foreground">
+                <span className="rounded-full bg-destructive px-2.5 py-0.5 text-sm font-bold text-destructive-foreground">
                   {n.badge}
                 </span>
               )}
@@ -97,32 +124,28 @@ export function Shell({
           ))}
         </nav>
         <button
-          onClick={logout}
-          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm hover:bg-sidebar-accent"
+          onClick={signOut}
+          className="flex items-center gap-3 rounded-xl px-3.5 py-3 text-base font-semibold hover:bg-sidebar-accent"
         >
-          <LogOut className="h-4 w-4" /> Chiqish
+          <LogOut className="h-5 w-5" /> {t("top.logout")}
         </button>
       </aside>
+
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="real-topbar hidden md:flex">
-          <span>Sog‘lom Mahalla · {role}</span>
-          <Bell className="h-4 w-4 text-primary" />
-          <div className="concept-avatar">{user.charAt(0)}</div>
-        </div>
-        <header className="flex items-center justify-between gap-3 border-b bg-card/70 px-5 py-3 backdrop-blur md:hidden">
-          <Logo />
-          <button type="button" onClick={logout} className="btn btn-ghost h-9" aria-label="Chiqish">
-            <LogOut className="h-4 w-4" />
-          </button>
-        </header>
-        <div className="flex gap-2 overflow-x-auto border-b bg-card px-4 py-2 md:hidden">
+        <TopBar role={role} />
+        <div className="flex gap-2 overflow-x-auto border-b bg-card px-4 py-2 lg:hidden">
           {nav.map((n) => (
             <button
               key={n.key}
               onClick={() => onNav(n.key)}
-              className={`whitespace-nowrap rounded-full px-3 py-1.5 text-sm ${active === n.key ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+              className={`whitespace-nowrap rounded-full px-4 py-2 text-base font-semibold ${
+                active === n.key
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-secondary-foreground"
+              }`}
             >
               {n.label}
+              {!!n.badge && ` (${n.badge})`}
             </button>
           ))}
         </div>
@@ -151,11 +174,11 @@ export function Stat({
   };
   return (
     <div className="card-soft p-5">
-      <div className={`grid h-10 w-10 place-items-center rounded-xl ${tones[tone]}`}>
-        <Icon className="h-5 w-5" />
+      <div className={`grid h-12 w-12 place-items-center rounded-2xl ${tones[tone]}`}>
+        <Icon className="h-6 w-6" />
       </div>
-      <div className="mt-4 text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 text-3xl font-bold tracking-tight">{value}</div>
+      <div className="mt-3 text-lg text-muted-foreground">{label}</div>
+      <div className="mt-1 text-4xl font-extrabold tracking-tight">{value}</div>
     </div>
   );
 }
@@ -174,7 +197,7 @@ export function Pill({
     muted: "bg-muted text-muted-foreground",
   };
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${t[tone]}`}>
+    <span className={`inline-flex rounded-full px-3 py-1 text-sm font-bold ${t[tone]}`}>
       {children}
     </span>
   );
@@ -192,8 +215,8 @@ export function PageTitle({
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{title}</h1>
-        {sub && <p className="mt-1 text-sm text-muted-foreground">{sub}</p>}
+        <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">{title}</h1>
+        {sub && <p className="mt-1.5 text-lg text-muted-foreground">{sub}</p>}
       </div>
       {right}
     </div>
@@ -202,24 +225,31 @@ export function PageTitle({
 
 export function Empty({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+    <div className="rounded-2xl border-2 border-dashed p-10 text-center text-lg text-muted-foreground">
       {children}
     </div>
   );
 }
 
-export { Link };
+export function Splash() {
+  const { t } = useI18n();
+  return (
+    <div className="grid min-h-screen place-items-center bg-background text-xl font-semibold text-muted-foreground">
+      {t("c.loading")}
+    </div>
+  );
+}
 
-import { useEffect as _useEffect, useState as _useState } from "react";
-import { useStore } from "@/lib/store";
-/** Redirects to login after hydration if the stored session doesn't match the role. */
-export function useGuard(role: "admin" | "doctor" | "patient") {
-  const { session } = useStore();
-  const navigate = useNavigate();
-  const [ready, setReady] = _useState(false);
-  _useEffect(() => setReady(true), []);
-  _useEffect(() => {
-    if (ready && session?.role !== role) navigate({ to: "/", replace: true });
-  }, [ready, session, role, navigate]);
-  return ready && session?.role === role ? session : null;
+/** Server yoki baza xatosi — qayta urinish tugmasi bilan. */
+export function ErrorCard({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="card-soft m-5 p-6 text-center">
+      <div className="text-xl font-bold text-destructive">{t("c.error")}</div>
+      <p className="mt-2 text-lg text-muted-foreground">{errorMessage(t, error)}</p>
+      <Button className="mt-4 h-11 px-5" onClick={onRetry}>
+        {t("c.retry")}
+      </Button>
+    </div>
+  );
 }

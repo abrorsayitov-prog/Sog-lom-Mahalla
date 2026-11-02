@@ -1,214 +1,125 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ShieldCheck, Stethoscope, User, X } from "lucide-react";
-import { Logo } from "@/components/Shell";
-import { actions, useStore } from "@/lib/store";
-import { ConceptPage } from "@/components/concept/ConceptPage";
+import { ShieldCheck, Stethoscope, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { LangSwitch } from "@/components/LangSwitch";
+import { Logo, Link } from "@/components/Shell";
+import { RoleLogin, ROLE_PATH } from "@/components/auth";
+import { useI18n, type TKey } from "@/lib/i18n";
+import { useMe } from "@/lib/session";
+import type { Role } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Kirish — Sog‘lom Mahalla" },
+      { title: "Sog‘lom Mahalla — kirish" },
       {
         name: "description",
-        content: "Sog‘lom Mahalla tibbiy platformasi: admin, shifokor va bemor uchun kirish.",
+        content:
+          "Dori, ovqatlanish va davolanish nazorati: admin, shifokor va bemor uchun alohida panellar.",
       },
-      { property: "og:title", content: "Sog‘lom Mahalla — Kirish" },
+      { property: "og:title", content: "Sog‘lom Mahalla" },
       {
         property: "og:description",
-        content: "Dori va ovqatlanish jadvalini kuzatuvchi tibbiy platforma.",
+        content: "Har bir panel o‘z manzilida ochiladi: admin, shifokor, bemor.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  component: Login,
+  component: Entry,
 });
 
-type Tab = "patient" | "doctor" | "admin";
+const CARDS: { role: Role; icon: typeof User; tint: string; descKey: TKey }[] = [
+  {
+    role: "patient",
+    icon: User,
+    tint: "bg-success-soft text-success",
+    descKey: "login.hint.patient",
+  },
+  {
+    role: "doctor",
+    icon: Stethoscope,
+    tint: "bg-accent text-accent-foreground",
+    descKey: "login.hint.doctor",
+  },
+  {
+    role: "admin",
+    icon: ShieldCheck,
+    tint: "bg-warning-soft text-warning",
+    descKey: "login.hint.admin",
+  },
+];
 
-function Login() {
+function Entry() {
+  const { t } = useI18n();
+  const me = useMe();
   const navigate = useNavigate();
-  const { session } = useStore();
-  const [tab, setTab] = useState<Tab>("patient");
-  const [showLogin, setShowLogin] = useState(false);
-  const [f, setF] = useState({ first: "", last: "", phone: "+998 ", login: "", pass: "" });
-  const [msg, setMsg] = useState<{ tone: "err" | "info"; text: string } | null>(null);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (session) navigate({ to: `/${session.role}` as "/admin", replace: true });
-  }, [session, navigate]);
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setMsg(null);
-    if (tab === "admin") {
-      if (!actions.loginAdmin(f.login, f.pass))
-        setMsg({ tone: "err", text: "Login yoki parol noto‘g‘ri" });
-      return;
-    }
-    if (!f.first.trim() || !f.last.trim() || f.phone.replace(/\D/g, "").length < 9) {
-      setMsg({ tone: "err", text: "Ism, familiya va telefon raqamini to‘liq kiriting" });
-      return;
-    }
-    if (tab === "doctor") {
-      const s = actions.loginDoctor(f.first, f.last, f.phone);
-      if (s === "pending")
-        setMsg({
-          tone: "info",
-          text: "So‘rovingiz Adminga yuborildi. Tasdiqlangandan so‘ng shu ma’lumotlar bilan qayta kiring.",
-        });
-      if (s === "rejected") setMsg({ tone: "err", text: "Admin so‘rovingizni rad etgan." });
-    } else if (!actions.loginPatient(f.first, f.last, f.phone)) {
-      setMsg({
-        tone: "err",
-        text: "Bunday bemor topilmadi. Shifokoringiz sizni ro‘yxatga kiritganiga ishonch hosil qiling.",
-      });
-    }
-  };
-
-  const tabs: { k: Tab; label: string; icon: typeof User }[] = [
-    { k: "patient", label: "Bemor", icon: User },
-    { k: "doctor", label: "Shifokor", icon: Stethoscope },
-    { k: "admin", label: "Admin", icon: ShieldCheck },
-  ];
+    if (me.data) navigate({ to: ROLE_PATH[me.data.role], replace: true });
+  }, [me.data, navigate]);
 
   return (
-    <>
-      <ConceptPage
-        onLogin={(role) => {
-          setTab(role);
-          setMsg(null);
-          setShowLogin(true);
-        }}
-      />
-      {showLogin && (
-        <div className="login-overlay" onClick={() => setShowLogin(false)}>
-          <form
-            onSubmit={submit}
-            className="login-form"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Panelga kirish"
-            onClick={(e) => e.stopPropagation()}
+    <div className="min-h-screen bg-sky">
+      <header className="flex items-center justify-between gap-3 border-b bg-card px-4 py-3 md:px-8">
+        <Logo />
+        <div className="flex items-center gap-2">
+          <LangSwitch />
+          <Button
+            className="h-11 gap-2 px-4 text-base"
+            onClick={() => setOpen(true)}
+            aria-label={t("top.login")}
           >
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="login-close"
-              aria-label="Kirish oynasini yopish"
-              onClick={() => setShowLogin(false)}
-            >
-              <X />
-            </Button>
-            <Logo />
-            <h2 className="mt-6 text-2xl font-bold">Xush kelibsiz</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Kim sifatida kirasiz?</p>
-
-            <div className="mt-6 grid grid-cols-3 gap-1 rounded-2xl bg-muted p-1">
-              {tabs.map((t) => (
-                <Button
-                  variant="ghost"
-                  type="button"
-                  key={t.k}
-                  onClick={() => {
-                    setTab(t.k);
-                    setMsg(null);
-                  }}
-                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-semibold transition ${tab === t.k ? "bg-card text-primary shadow-sm" : "text-muted-foreground"}`}
-                >
-                  <t.icon className="h-4 w-4" />
-                  {t.label}
-                </Button>
-              ))}
-            </div>
-
-            <div className="mt-6 space-y-3">
-              {tab === "admin" ? (
-                <>
-                  <input
-                    className="field"
-                    aria-label="Administrator logini"
-                    name="login"
-                    autoComplete="username"
-                    placeholder="Login"
-                    value={f.login}
-                    onChange={(e) => setF({ ...f, login: e.target.value })}
-                  />
-                  <input
-                    className="field"
-                    type="password"
-                    aria-label="Parol"
-                    name="password"
-                    autoComplete="current-password"
-                    placeholder="Parol"
-                    value={f.pass}
-                    onChange={(e) => setF({ ...f, pass: e.target.value })}
-                  />
-                </>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      className="field"
-                      aria-label="Ism"
-                      name="firstName"
-                      autoComplete="given-name"
-                      placeholder="Ism"
-                      value={f.first}
-                      maxLength={50}
-                      onChange={(e) => setF({ ...f, first: e.target.value })}
-                    />
-                    <input
-                      className="field"
-                      aria-label="Familiya"
-                      name="lastName"
-                      autoComplete="family-name"
-                      placeholder="Familiya"
-                      value={f.last}
-                      maxLength={50}
-                      onChange={(e) => setF({ ...f, last: e.target.value })}
-                    />
-                  </div>
-                  <input
-                    className="field"
-                    inputMode="tel"
-                    type="tel"
-                    aria-label="Telefon raqami"
-                    name="phone"
-                    autoComplete="tel"
-                    placeholder="+998 90 123 45 67"
-                    value={f.phone}
-                    maxLength={20}
-                    onChange={(e) => setF({ ...f, phone: e.target.value })}
-                  />
-                </>
-              )}
-            </div>
-
-            {msg && (
-              <div
-                role="alert"
-                className={`mt-4 rounded-xl p-3 text-sm ${msg.tone === "err" ? "bg-danger-soft text-destructive" : "bg-accent text-accent-foreground"}`}
-              >
-                {msg.text}
-              </div>
-            )}
-
-            <Button type="submit" className="mt-6 h-11 w-full">
-              Kirish
-            </Button>
-            <p className="mt-4 text-center text-xs text-muted-foreground">
-              {tab === "doctor" && "Birinchi marta kirsangiz, so‘rov Admin tasdig‘iga yuboriladi."}
-              {tab === "patient" &&
-                "Shifokoringiz kiritgan ism, familiya va telefon raqam bilan kiring."}
-              {tab === "admin" && "Faqat platforma administratori uchun."}
-            </p>
-          </form>
+            <User className="h-5 w-5" />
+            <span className="hidden sm:inline">{t("top.login")}</span>
+          </Button>
         </div>
-      )}
-    </>
+      </header>
+
+      <main className="mx-auto w-full max-w-4xl px-4 py-8 md:py-12">
+        <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">{t("login.choose")}</h1>
+        <p className="mt-2 text-lg text-muted-foreground">{t("login.chooseSub")}</p>
+
+        <div className="mt-7 grid gap-4 md:grid-cols-3">
+          {CARDS.map((card) => (
+            <Link
+              key={card.role}
+              to={ROLE_PATH[card.role]}
+              className="card-soft group flex flex-col p-6 transition hover:shadow-lift focus-visible:ring-4"
+            >
+              <span className={`grid h-14 w-14 place-items-center rounded-2xl ${card.tint}`}>
+                <card.icon className="h-8 w-8" />
+              </span>
+              <span className="mt-4 text-2xl font-extrabold">{t(`role.${card.role}`)}</span>
+              <span className="mt-2 flex-1 text-lg leading-snug text-muted-foreground">
+                {t(card.descKey)}
+              </span>
+              <span className="mt-4 inline-flex items-center gap-1 text-lg font-bold text-primary">
+                {t("login.open")}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </main>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="sr-only">{t("login.heading")}</DialogTitle>
+            <DialogDescription className="sr-only">{t("login.person")}</DialogDescription>
+          </DialogHeader>
+          <RoleLogin onSuccess={() => setOpen(false)} />
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
